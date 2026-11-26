@@ -1,0 +1,490 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Who Owns Orbit</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Barlow+Semi+Condensed:wght@500;700&family=Barlow:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+/* VOICE: mission-control calm; precise, quiet chrome so the satellites carry the colour
+   IDEA: a tracking-station wall display: one big live globe, a legend that is also the filter
+   PICTURE: the WebGL globe fills the stage edge to edge; owner colours are the only bright things
+   COLOUR and TYPE: night sky #05080f, muted teal land, vivid owner swatches; Barlow Semi Condensed + Barlow
+   LAYOUT: top bar (title, clock, time controls), left legend/filter column, globe stage; stacks on phones */
+:root{color-scheme:dark;--bg:#05080f;--panel:#0b111c;--line:#1c2738;--ink:#e6edf5;--dim:#8a9ab0;--acc:#7fd4ff;--warn:#ffcf6b}
+*{box-sizing:border-box;min-width:0}
+html,body{height:100%}
+body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.45 Barlow,system-ui,sans-serif;overflow:hidden}
+h1,.cond{font-family:"Barlow Semi Condensed",Barlow,system-ui,sans-serif}
+button,select,input{font:inherit;color:inherit}
+button{background:#121b2a;border:1px solid var(--line);border-radius:8px;min-height:36px;padding:0 12px;cursor:pointer}
+button:hover{border-color:#34465f}
+button:focus-visible,select:focus-visible,input:focus-visible,label.row:focus-within{outline:2px solid var(--acc);outline-offset:1px}
+button[aria-pressed=true]{background:#1d3550;border-color:#3f6a92}
+.app{display:grid;grid-template-rows:auto minmax(0,1fr);height:100vh;height:100dvh}
+header{display:flex;flex-wrap:wrap;align-items:center;gap:10px 20px;padding:10px 16px;border-bottom:1px solid var(--line);background:#070b14}
+h1{margin:0;font-size:24px;line-height:1.05;font-weight:700;letter-spacing:.01em}
+.sub{color:var(--dim);font-size:13px}
+.clock{margin-left:auto;text-align:right}
+.clock b{font:600 17px "Barlow Semi Condensed",sans-serif;font-variant-numeric:tabular-nums;white-space:nowrap}
+.clock div{color:var(--dim);font-size:12px;white-space:nowrap}
+.tc{display:flex;gap:6px;flex-wrap:wrap;align-items:center}
+.tc button{min-width:44px;padding:0 10px}
+main{display:grid;grid-template-columns:320px minmax(0,1fr);min-height:0}
+aside{background:var(--panel);border-right:1px solid var(--line);display:flex;flex-direction:column;min-height:0}
+.ctl{padding:12px 14px;border-bottom:1px solid var(--line);display:grid;gap:10px}
+.ctl label.lbl{font-size:12px;color:var(--dim)}
+input[type=search]{width:100%;font-size:16px;background:#070b14;border:1px solid var(--line);border-radius:8px;padding:8px 10px}
+select{background:#070b14;border:1px solid var(--line);border-radius:8px;padding:6px 8px;min-height:36px}
+.btns{display:flex;flex-wrap:wrap;gap:6px}
+.chips{display:flex;flex-wrap:wrap;gap:6px}
+.chips button{min-height:32px;font-size:13px;padding:0 10px}
+.pair{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.pair>div{display:grid;gap:4px}
+.toggle{display:flex;align-items:center;gap:8px;font-size:14px}
+.toggle input{width:18px;height:18px;accent-color:var(--acc)}
+#list{overflow-y:auto;flex:1;padding:4px 6px 12px}
+.row{display:grid;grid-template-columns:22px 14px minmax(0,1fr) auto;align-items:center;gap:8px;padding:7px 8px;border-radius:6px;cursor:pointer;position:relative}
+.row:hover{background:#111a28}
+.row input{width:18px;height:18px;margin:0;accent-color:var(--acc)}
+.sw{width:12px;height:12px;border-radius:50%}
+.row .nm{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:14px}
+.row .ct{font-variant-numeric:tabular-nums;color:var(--dim);font-size:13px;text-align:right}
+.row .bar{position:absolute;left:52px;right:8px;bottom:2px;height:2px;background:#152032;border-radius:2px;overflow:hidden}
+.row .bar i{display:block;height:100%;opacity:.8}
+.row.off .nm,.row.off .ct{opacity:.45}
+.foot{padding:10px 14px;border-top:1px solid var(--line);font-size:12px;color:var(--dim);display:grid;gap:6px}
+.foot button{min-height:32px;font-size:13px;justify-self:start}
+.stage{position:relative;min-height:0;overflow:hidden;background:radial-gradient(ellipse at 50% 45%,#0c1626 0%,#05080f 70%)}
+canvas{position:absolute;inset:0;width:100%;height:100%;display:block;touch-action:none;cursor:grab}
+canvas.drag{cursor:grabbing}
+.note{position:absolute;left:12px;bottom:12px;max-width:min(520px,calc(100% - 24px));font-size:12px;color:var(--dim);background:#070b14cc;border:1px solid var(--line);border-radius:8px;padding:6px 10px;pointer-events:none}
+.note.warn{color:var(--warn);border-color:#5a4a20}
+.info{position:absolute;right:12px;top:12px;width:min(300px,calc(100% - 24px));background:#0a1120ee;border:1px solid var(--line);border-radius:10px;padding:12px 14px;display:none}
+.info.on{display:block}
+.info h2{margin:0 0 2px;font:700 20px/1.1 "Barlow Semi Condensed",sans-serif;overflow-wrap:anywhere}
+.info .own{display:flex;align-items:center;gap:6px;color:var(--dim);font-size:13px;margin-bottom:8px}
+.info dl{display:grid;grid-template-columns:auto 1fr;gap:3px 12px;margin:0;font-size:13px}
+.info dt{color:var(--dim)}.info dd{margin:0;text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+.info button{margin-top:10px;min-height:32px;font-size:13px}
+.hint{position:absolute;right:12px;bottom:12px;font-size:12px;color:#5d6d83;pointer-events:none}
+#load{position:absolute;inset:0;display:none;place-items:center;padding:16px;background:#05080fd9;overflow:auto}
+#load.on{display:grid}
+.card{width:min(560px,100%);background:#0b1220;border:1px solid #26354b;border-radius:14px;padding:22px 24px}
+.card h2{margin:0 0 6px;font:700 28px/1.05 "Barlow Semi Condensed",sans-serif}
+.card p{margin:6px 0;color:#c3cfdd}
+.card ol{padding-left:20px;margin:12px 0;display:grid;gap:8px}
+.card a{color:var(--acc)}
+.drop{margin-top:14px;border:2px dashed #34506f;border-radius:12px;padding:18px;text-align:center;display:grid;gap:8px;justify-items:center}
+.drop.over{border-color:var(--acc);background:#0f2033}
+.drop small{color:var(--dim)}
+#status{min-height:1.4em;font-size:13px;color:var(--warn)}
+.primary{background:#1e4f78;border-color:#3d79a8;font-weight:600;min-height:44px;padding:0 18px}
+@media(max-width:760px){
+  body{overflow:auto}
+  .app{height:auto;min-height:100dvh}
+  main{grid-template-columns:1fr}
+  .stage{height:62vh;min-height:360px;order:-1}
+  aside{border-right:0;border-top:1px solid var(--line)}
+  #list{max-height:none;overflow:visible}
+  .clock{margin-left:0;text-align:left}
+  h1{font-size:21px}
+  .hint{display:none}
+  #load{position:relative;inset:auto}
+  .stage:has(#load.on){height:auto;min-height:0}
+  .stage:has(#load.on) canvas{display:none}
+}
+@media (prefers-reduced-motion:reduce){*{scroll-behavior:auto}}
+</style>
+</head>
+<body>
+<div class="app">
+<header>
+  <div><h1>Who owns orbit</h1><div class="sub" id="sub">Working satellites, coloured by owner</div></div>
+  <div class="clock"><b id="utc">—</b><div id="loc">—</div></div>
+  <div class="tc" role="group" aria-label="Time controls">
+    <button id="play" aria-label="Pause">❚❚</button>
+    <button data-sp="1" aria-pressed="true">1×</button>
+    <button data-sp="60">60×</button>
+    <button data-sp="300">300×</button>
+    <button data-sp="1000">1000×</button>
+    <button id="now">Now</button>
+  </div>
+</header>
+<main>
+<aside>
+  <div class="ctl">
+    <input type="search" id="q" placeholder="Search owners" aria-label="Search owners">
+    <div class="btns"><button id="all">All</button><button id="none">None</button><button id="top">Top 10</button></div>
+    <div><label class="lbl">Orbit</label>
+      <div class="chips" id="orb" role="group" aria-label="Orbit filter">
+        <button data-o="LEO" aria-pressed="true" title="Low Earth orbit, under 2,000 km">Low</button>
+        <button data-o="MEO" aria-pressed="true" title="Medium Earth orbit, navigation satellites">Medium</button>
+        <button data-o="GEO" aria-pressed="true" title="Geostationary, about 35,800 km">Geostationary</button>
+        <button data-o="HEO" aria-pressed="true" title="Highly elliptical or beyond GEO">Elliptical</button>
+      </div></div>
+    <div class="pair">
+      <div><label class="lbl" for="trk">Tracks</label>
+        <select id="trk"><option value="all">Shown owners</option><option value="sel">Clicked satellite</option><option value="off">Off</option></select></div>
+      <div><label class="lbl" for="cap">Track limit</label>
+        <select id="cap"><option>2000</option><option selected>6000</option><option>12000</option><option value="99999">No limit</option></select></div>
+    </div>
+    <label class="toggle"><input type="checkbox" id="night" checked> Day and night shading</label>
+  </div>
+  <div id="list" role="group" aria-label="Owners"></div>
+  <div class="foot"><span id="dataline">No data loaded</span><button id="reload">Load new data files</button></div>
+</aside>
+<section class="stage" id="stage">
+  <canvas id="gl" aria-label="3D globe of satellites"></canvas>
+  <div class="info" id="info" aria-live="polite"></div>
+  <div class="note" id="note" hidden></div>
+  <div class="hint">Drag to rotate · scroll or pinch to zoom · click a dot</div>
+  <div id="load">
+    <div class="card">
+      <h2>Load the satellite catalogue</h2>
+      <p>This page draws CelesTrak’s public data. Download these two files, then drop both here. The page remembers them in this browser.</p>
+      <ol>
+        <li><b>Orbits</b> for working satellites: <a href="https://celestrak.org/NORAD/elements/gp.php?GROUP=active&amp;FORMAT=json" target="_blank" rel="noopener">CelesTrak active satellites (JSON)</a>. Save the page that opens as a .json file.</li>
+        <li><b>Owners</b>: <a href="https://celestrak.org/pub/satcat.csv" target="_blank" rel="noopener">CelesTrak SATCAT (CSV)</a>. If that link fails, use the download on the <a href="https://celestrak.org/satcat/" target="_blank" rel="noopener">SATCAT page</a>.</li>
+      </ol>
+      <div class="drop" id="drop">
+        <span>Drop both files here</span>
+        <button class="primary" id="pick">Choose files</button>
+        <small>Also accepts TLE text files and CelesTrak CSV orbit files</small>
+        <input type="file" id="file" multiple hidden accept=".json,.csv,.txt,.tle,.3le">
+      </div>
+      <div id="status" role="status"></div>
+      <p style="font-size:13px;color:var(--dim)">Without the owners file every satellite shows as “Unknown owner”.</p>
+    </div>
+  </div>
+</section>
+</main>
+</div>
+<script>
+{
+/* ---------- constants & owner names ---------- */
+const MU=398600.4418, RE=6378.137, J2=1.08262668e-3, TAU=Math.PI*2, D2R=Math.PI/180, DAY=86400000;
+const OWN={US:'United States',STARLINK:'United States — Starlink',PRC:'China',CIS:'Russia (CIS)',UK:'United Kingdom',JPN:'Japan',IND:'India',ESA:'European Space Agency',FR:'France',GER:'Germany',IT:'Italy',CA:'Canada',SKOR:'South Korea',NKOR:'North Korea',ISRA:'Israel',AUS:'Australia',NZ:'New Zealand',BRAZ:'Brazil',ARGN:'Argentina',SPN:'Spain',NETH:'Netherlands',LUXE:'Luxembourg',TURK:'Türkiye',SAFR:'South Africa',UAE:'United Arab Emirates',SAUD:'Saudi Arabia',IRAN:'Iran',INDO:'Indonesia',MALA:'Malaysia',THAI:'Thailand',SING:'Singapore',PAKI:'Pakistan',EGYP:'Egypt',NOR:'Norway',SWED:'Sweden',FIN:'Finland',DEN:'Denmark',POL:'Poland',CZE:'Czechia',SWTZ:'Switzerland',ASRA:'Austria',BEL:'Belgium',POR:'Portugal',GREC:'Greece',UKR:'Ukraine',BELA:'Belarus',KAZ:'Kazakhstan',AZER:'Azerbaijan',MEX:'Mexico',CHLE:'Chile',PER:'Peru',COL:'Colombia',VENZ:'Venezuela',BOL:'Bolivia',ECU:'Ecuador',URY:'Uruguay',ROC:'Taiwan',VTNM:'Vietnam',RP:'Philippines',BGD:'Bangladesh',LKA:'Sri Lanka',NPL:'Nepal',MNG:'Mongolia',QAT:'Qatar',KWT:'Kuwait',ALG:'Algeria',MA:'Morocco',NIG:'Nigeria',KEN:'Kenya',ETH:'Ethiopia',ANG:'Angola',GHA:'Ghana',RWA:'Rwanda',TUN:'Tunisia',HUN:'Hungary',LTU:'Lithuania',LVA:'Latvia',EST:'Estonia',SVN:'Slovenia',BUL:'Bulgaria',ROM:'Romania',IRL:'Ireland',ITSO:'Intelsat',SES:'SES',EUTE:'Eutelsat',EUME:'EUMETSAT',GLOB:'Globalstar',IRID:'Iridium',ORB:'ORBCOMM',O3B:'O3b (SES)',IM:'Inmarsat',AB:'Arabsat',AC:'AsiaSat',ABS:'ABS',NATO:'NATO',ISS:'International Space Station',CHBZ:'China / Brazil',FGER:'France / Germany',FRIT:'France / Italy',TBD:'Owner to be confirmed',UNK:'Unknown owner'};
+const FIXED={STARLINK:'#9aa6b8',US:'#3d8bff',PRC:'#ff4d4d',CIS:'#ffb02e',UK:'#c77dff',JPN:'#ff7eb6',IND:'#ff8a3d',ESA:'#36d6c3',FR:'#5ec8ff',GER:'#f4e04d',IT:'#7ee081',CA:'#ff6f91',SKOR:'#b3a1ff',ISRA:'#8fd3ff',AUS:'#ffd27f',UNK:'#5b6676'};
+const OKS=new Set(['+','P','B','S','X']);
+const $=id=>document.getElementById(id);
+const esc=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+
+/* ---------- state ---------- */
+let N=0, S=null, groups=[], gIndex={}, visible=[], visCount=0;
+let simT=Date.now(), speed=1, playing=true, selected=-1;
+let orbOn={LEO:1,MEO:1,GEO:1,HEO:1}, trkMode='all', trkCap=6000, tracksDirty=true, trackT=0, colorsDirty=true;
+const cam={yaw:-0.6,pitch:0.35,dist:4.2};
+
+/* ---------- parsing ---------- */
+function parseCSV(t){
+  const rows=[];let row=[],f='',q=false;
+  for(let i=0;i<t.length;i++){const c=t[i];
+    if(q){if(c==='"'){if(t[i+1]==='"'){f+='"';i++}else q=false}else f+=c}
+    else if(c==='"')q=true; else if(c===','){row.push(f);f=''}
+    else if(c==='\n'){row.push(f);rows.push(row);row=[];f=''}
+    else if(c!=='\r')f+=c}
+  if(f||row.length){row.push(f);rows.push(row)}
+  const h=rows.shift()||[];return rows.filter(r=>r.length>1).map(r=>{const o={};h.forEach((k,j)=>o[k.trim()]=r[j]);return o})}
+function tleEpoch(s){const yy=+s.slice(0,2),d=parseFloat(s.slice(2));return Date.UTC(yy<57?2000+yy:1900+yy,0,1)+(d-1)*DAY}
+function parseTLE(t){
+  const L=t.split(/\r?\n/).map(s=>s.trimEnd()).filter(Boolean),out=[];
+  for(let i=0;i<L.length;i++){
+    if(L[i][0]==='1'&&L[i+1]&&L[i+1][0]==='2'){
+      const a=L[i],b=L[i+1],nm=(i>0&&L[i-1][0]!=='2'&&L[i-1][0]!=='1')?L[i-1].replace(/^0 /,'').trim():'NORAD '+a.slice(2,7).trim();
+      out.push({OBJECT_NAME:nm,NORAD_CAT_ID:a.slice(2,7).trim(),OBJECT_ID:a.slice(9,17).trim(),EPOCH:tleEpoch(a.slice(18,32)),
+        MEAN_MOTION_DOT:parseFloat(a.slice(33,43)),INCLINATION:+b.slice(8,16),RA_OF_ASC_NODE:+b.slice(17,25),
+        ECCENTRICITY:parseFloat('.'+b.slice(26,33)),ARG_OF_PERICENTER:+b.slice(34,42),MEAN_ANOMALY:+b.slice(43,51),MEAN_MOTION:+b.slice(52,63)});i++}}
+  return out}
+function classify(text){
+  const s=text.trimStart();
+  if(s[0]==='['||s[0]==='{'){let j=JSON.parse(s);if(!Array.isArray(j))j=[j];const k=j[0]||{};
+    if('MEAN_MOTION' in k)return{gp:j};if('OWNER' in k)return{cat:j};return{}}
+  const first=s.slice(0,600);
+  if(/MEAN_MOTION/.test(first.split('\n')[0]))return{gp:parseCSV(s)};
+  if(/OWNER/.test(first.split('\n')[0]))return{cat:parseCSV(s)};
+  if(/^1 .{60,}/m.test(first)||/^1 /m.test(s.slice(0,3000)))return{gp:parseTLE(s)};
+  return{}}
+function toMs(e){if(typeof e==='number')return e;let s=String(e).trim();if(!/[zZ]|[+-]\d\d:?\d\d$/.test(s))s+='Z';return Date.parse(s)}
+function joinData(gp,cat){
+  const own=new Map();
+  if(cat)for(const c of cat){const id=+c.NORAD_CAT_ID;if(id)own.set(id,c)}
+  const best=new Map();
+  for(const g of gp){const id=+g.NORAD_CAT_ID,ep=toMs(g.EPOCH),n=+g.MEAN_MOTION;
+    if(!id||!isFinite(ep)||!(n>0))continue;const p=best.get(id);if(!p||p.ep<ep)best.set(id,{g,ep})}
+  const rows=[];let dropped=0;
+  for(const[id,{g,ep}]of best){const c=own.get(id);
+    if(c){const st=(c.OPS_STATUS_CODE||'').trim();if(st&&!OKS.has(st)){dropped++;continue}
+      if(c.OBJECT_TYPE&&c.OBJECT_TYPE.trim()&&c.OBJECT_TYPE.trim()!=='PAY'){dropped++;continue}}
+    let o=c?(c.OWNER||'').trim()||'UNK':'UNK';const nm=(g.OBJECT_NAME||'').trim();
+    if(o==='US'&&/^STARLINK/i.test(nm))o='STARLINK';
+    rows.push([id,nm,g.OBJECT_ID||'',o,c?(c.LAUNCH_DATE||''):'',ep,+g.MEAN_MOTION,+g.ECCENTRICITY||0,+g.INCLINATION,+g.RA_OF_ASC_NODE,+g.ARG_OF_PERICENTER,+g.MEAN_ANOMALY,+g.MEAN_MOTION_DOT||0])}
+  return{rows,dropped,hadCat:!!cat}}
+
+/* ---------- orbital model: Kepler + J2 secular drift ---------- */
+function build(rows){
+  N=rows.length;
+  S={n:new Float64Array(N),e:new Float64Array(N),inc:new Float64Array(N),ra0:new Float64Array(N),w0:new Float64Array(N),M0:new Float64Array(N),
+     ep:new Float64Array(N),ndd:new Float64Array(N),a:new Float64Array(N),raD:new Float64Array(N),wD:new Float64Array(N),mD:new Float64Array(N),
+     g:new Int32Array(N),cls:new Uint8Array(N),meta:new Array(N),pos:new Float32Array(N*3)};
+  const gm={};groups=[];
+  rows.forEach((r,k)=>{
+    const n=r[6]*TAU/86400,e=Math.min(Math.max(r[7],0),0.99),i=r[8]*D2R,a=Math.cbrt(MU/(n*n)),p=a*(1-e*e),f=1.5*n*J2*(RE/p)**2,ci=Math.cos(i);
+    S.n[k]=n;S.e[k]=e;S.inc[k]=i;S.ra0[k]=r[9]*D2R;S.w0[k]=r[10]*D2R;S.M0[k]=r[11]*D2R;S.ep[k]=r[5];S.a[k]=a;
+    S.ndd[k]=r[12]*TAU/(86400*86400);S.raD[k]=-f*ci;S.wD[k]=0.5*f*(5*ci*ci-1);S.mD[k]=n+0.5*f*Math.sqrt(1-e*e)*(3*ci*ci-1);
+    const apo=a*(1+e)-RE,alt=a-RE;S.cls[k]=e>0.25||alt>37500?3:apo<2200?0:alt<34500?1:2;
+    if(!(r[3] in gm)){gm[r[3]]=groups.length;groups.push({code:r[3],name:OWN[r[3]]||r[3],count:0,vis:0,on:true,color:'#888'})}
+    S.g[k]=gm[r[3]];groups[S.g[k]].count++;S.meta[k]=r});
+  groups.sort((x,y)=>y.count-x.count);gIndex={};groups.forEach((g,i)=>gIndex[g.code]=i);
+  for(let k=0;k<N;k++)S.g[k]=gIndex[S.meta[k][3]];
+  let h=0;groups.forEach(g=>{if(FIXED[g.code])g.color=FIXED[g.code];else{h=(h+137.508)%360;g.color=hsl(h,0.75,0.62)}});
+  selected=-1;tracksDirty=colorsDirty=true;renderList();updateVisible()}
+function hsl(h,s,l){const a=s*Math.min(l,1-l),f=n=>{const k=(n+h/30)%12;return Math.round(255*(l-a*Math.max(-1,Math.min(k-3,9-k,1)))).toString(16).padStart(2,'0')};return'#'+f(0)+f(8)+f(4)}
+function elems(k,t){
+  const dt=(t-S.ep[k])/1000;
+  return[S.ra0[k]+S.raD[k]*dt,S.w0[k]+S.wD[k]*dt,S.M0[k]+S.mD[k]*dt+S.ndd[k]*dt*dt]}
+function posAt(k,t,out,o){
+  const[ra,w,M0]=elems(k,t),e=S.e[k],a=S.a[k];
+  let M=M0%TAU,E=e<0.8?M:Math.PI;
+  for(let j=0;j<8;j++){const d=(E-e*Math.sin(E)-M)/(1-e*Math.cos(E));E-=d;if(Math.abs(d)<1e-9)break}
+  const xp=a*(Math.cos(E)-e),yp=a*Math.sqrt(1-e*e)*Math.sin(E);
+  return rot(xp,yp,ra,w,S.inc[k],out,o)}
+function rot(xp,yp,ra,w,i,out,o){
+  const cO=Math.cos(ra),sO=Math.sin(ra),cw=Math.cos(w),sw=Math.sin(w),ci=Math.cos(i),si=Math.sin(i);
+  out[o]=((cO*cw-sO*sw*ci)*xp+(-cO*sw-sO*cw*ci)*yp)/RE;
+  out[o+1]=((sO*cw+cO*sw*ci)*xp+(-sO*sw+cO*cw*ci)*yp)/RE;
+  out[o+2]=((sw*si)*xp+(cw*si)*yp)/RE;return out}
+const TSEG=72;
+function orbitLine(k,t,out,o){
+  const[ra,w]=elems(k,t),e=S.e[k],p=S.a[k]*(1-e*e),tmp=[0,0,0];let prev=null;
+  for(let j=0;j<=TSEG;j++){const nu=TAU*j/TSEG,r=p/(1+e*Math.cos(nu));rot(r*Math.cos(nu),r*Math.sin(nu),ra,w,S.inc[k],tmp,0);
+    if(prev){out[o++]=prev[0];out[o++]=prev[1];out[o++]=prev[2];out[o++]=tmp[0];out[o++]=tmp[1];out[o++]=tmp[2]}prev=tmp.slice()}
+  return o}
+function gmst(t){const jd=t/DAY+2440587.5,T=(jd-2451545)/36525;
+  return((280.46061837+360.98564736629*(jd-2451545)+0.000387933*T*T)%360)*D2R}
+function sunDir(t){const n=t/DAY+2440587.5-2451545,L=(280.46+0.9856474*n)*D2R,g=(357.528+0.9856003*n)*D2R,
+  l=L+(1.915*Math.sin(g)+0.02*Math.sin(2*g))*D2R,eps=(23.439-4e-7*n)*D2R;return[Math.cos(l),Math.cos(eps)*Math.sin(l),Math.sin(eps)*Math.sin(l)]}
+
+/* ---------- visibility, list, colours ---------- */
+const CLS=['LEO','MEO','GEO','HEO'];
+function updateVisible(){
+  visible=[];groups.forEach(g=>g.vis=0);
+  for(let k=0;k<N;k++){const g=groups[S.g[k]];if(orbOn[CLS[S.cls[k]]]){g.vis++;if(g.on)visible.push(k)}}
+  visCount=visible.length;colorsDirty=tracksDirty=true;
+  if(selected>=0&&!visible.includes(selected))setSel(-1);
+  refreshCounts();updateNote()}
+function renderList(){
+  const q=$('q').value.trim().toLowerCase();
+  $('list').innerHTML=groups.map((g,i)=>(!q||g.name.toLowerCase().includes(q)||g.code.toLowerCase().includes(q))?
+    `<label class="row${g.on?'':' off'}" data-i="${i}"><input type="checkbox" ${g.on?'checked':''} aria-label="${esc(g.name)}"><span class="sw" style="background:${g.color}"></span><span class="nm" title="${esc(g.name)} (${esc(g.code)})">${esc(g.name)}</span><span class="ct">0</span><span class="bar"><i style="background:${g.color}"></i></span></label>`:'').join('')||'<p class="sub" style="padding:8px">No owners match.</p>';
+  refreshCounts()}
+function refreshCounts(){
+  const mx=Math.max(1,...groups.map(g=>g.vis));
+  for(const r of $('list').querySelectorAll('.row')){const g=groups[+r.dataset.i];r.querySelector('.ct').textContent=g.vis.toLocaleString();
+    r.querySelector('.bar i').style.width=(100*g.vis/mx)+'%';r.classList.toggle('off',!g.on);r.querySelector('input').checked=g.on}
+  const own=groups.filter(g=>g.on&&g.vis).length;
+  $('sub').textContent=N?`${visCount.toLocaleString()} of ${N.toLocaleString()} working satellites shown · ${own} owners`:'Working satellites, coloured by owner'}
+$('list').addEventListener('change',e=>{const r=e.target.closest('.row');if(!r)return;groups[+r.dataset.i].on=e.target.checked;updateVisible();save()});
+$('q').addEventListener('input',renderList);
+$('all').onclick=()=>{groups.forEach(g=>g.on=true);updateVisible();save()};
+$('none').onclick=()=>{groups.forEach(g=>g.on=false);updateVisible();save()};
+$('top').onclick=()=>{const t=[...groups].sort((a,b)=>b.vis-a.vis).slice(0,10);groups.forEach(g=>g.on=t.includes(g));updateVisible();save()};
+for(const b of $('orb').querySelectorAll('button'))b.onclick=()=>{const o=b.dataset.o;orbOn[o]=orbOn[o]?0:1;b.setAttribute('aria-pressed',!!orbOn[o]);updateVisible()};
+$('trk').onchange=e=>{trkMode=e.target.value;tracksDirty=true;updateNote()};
+$('cap').onchange=e=>{trkCap=+e.target.value;tracksDirty=true;updateNote()};
+
+/* ---------- time ---------- */
+for(const b of document.querySelectorAll('[data-sp]'))b.onclick=()=>{speed=+b.dataset.sp;playing=true;syncTime()};
+$('play').onclick=()=>{playing=!playing;syncTime()};
+$('now').onclick=()=>{simT=Date.now();speed=1;playing=true;tracksDirty=true;syncTime()};
+function syncTime(){for(const b of document.querySelectorAll('[data-sp]'))b.setAttribute('aria-pressed',+b.dataset.sp===speed);
+  $('play').textContent=playing?'❚❚':'▶';$('play').setAttribute('aria-label',playing?'Pause':'Play')}
+const fU=new Intl.DateTimeFormat('en-GB',{timeZone:'UTC',day:'numeric',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:false});
+const fL=new Intl.DateTimeFormat(undefined,{weekday:'short',hour:'2-digit',minute:'2-digit',timeZoneName:'short'});
+
+/* ---------- notes, info card ---------- */
+let medianEp=0;
+function updateNote(){
+  const n=$('note');let msg='',warn=false;
+  if(N&&trkMode==='all'){const c=visCount;if(c>trkCap){msg=`Tracks drawn for ${trkCap.toLocaleString()} of ${c.toLocaleString()} shown satellites (smaller owners first). Untick Starlink or raise the track limit to see the rest.`}}
+  if(N&&medianEp){const age=Math.abs(simT-medianEp)/DAY;if(age>14){msg=`Orbit data is ${Math.round(age)} days from the time shown, so positions have drifted. Load fresh files for accuracy.`;warn=true}}
+  n.hidden=!msg;n.textContent=msg;n.classList.toggle('warn',warn)}
+function setSel(k){selected=k;tracksDirty=true;const box=$('info');if(k<0){box.classList.remove('on');box.innerHTML='';return}box.classList.add('on');fillInfo()}
+function fillInfo(){
+  const k=selected;if(k<0)return;const r=S.meta[k],g=groups[S.g[k]],p=posAt(k,simT,[0,0,0],0),rr=Math.hypot(p[0],p[1],p[2])*RE,
+    v=Math.sqrt(MU*(2/rr-1/S.a[k])),per=TAU/S.n[k]/60;
+  const ep=new Date(r[5]).toISOString().slice(0,10);
+  $('info').innerHTML=`<h2>${esc(r[1]||'Unnamed')}</h2><div class="own"><span class="sw" style="background:${g.color}"></span>${esc(g.name)}</div>
+  <dl><dt>NORAD ID</dt><dd>${esc(r[0])}</dd><dt>Designator</dt><dd>${esc(r[2]||'—')}</dd><dt>Launched</dt><dd>${esc(r[4]||'—')}</dd>
+  <dt>Orbit</dt><dd>${['Low','Medium','Geostationary','Elliptical / high'][S.cls[k]]}</dd>
+  <dt>Altitude now</dt><dd>${Math.round(rr-RE).toLocaleString()} km</dd><dt>Speed</dt><dd>${v.toFixed(2)} km/s</dd>
+  <dt>Period</dt><dd>${per<180?per.toFixed(1)+' min':(per/60).toFixed(2)+' h'}</dd><dt>Inclination</dt><dd>${(S.inc[k]/D2R).toFixed(1)}°</dd>
+  <dt>Data epoch</dt><dd>${ep}</dd></dl><button id="clr">Close</button>`;
+  $('clr').onclick=()=>setSel(-1)}
+
+/* ---------- loading & storage ---------- */
+let pend={gp:null,cat:null};
+async function handleFiles(files){
+  $('status').textContent='Reading…';
+  for(const f of files){try{const c=classify(await f.text());if(c.gp)pend.gp=c.gp;if(c.cat)pend.cat=c.cat;
+      if(!c.gp&&!c.cat)$('status').textContent=`“${f.name}” isn’t a CelesTrak orbit or SATCAT file.`}
+    catch(e){$('status').textContent=`Couldn’t read “${f.name}”: ${e.message}`;return}}
+  if(!pend.gp){$('status').textContent=pend.cat?'Owners file loaded. Now add the orbits file (active satellites JSON).':$('status').textContent;return}
+  const j=joinData(pend.gp,pend.cat);
+  if(!j.rows.length){$('status').textContent='No usable orbits found in that file.';return}
+  const keepCat=!!pend.cat;pend={gp:null,cat:null};
+  apply(j.rows,Date.now());$('load').classList.remove('on');$('status').textContent='';
+  if(!keepCat){const n=$('note');n.hidden=false;n.classList.add('warn');n.textContent='No owners file loaded, so every satellite shows as Unknown owner. Use “Load new data files” to add the SATCAT CSV.'}
+  persist(j.rows)}
+function apply(rows,saved){
+  build(rows);const eps=rows.map(r=>r[5]).sort((a,b)=>a-b);medianEp=eps[eps.length>>1];
+  $('dataline').textContent=`${rows.length.toLocaleString()} satellites · orbits dated ${new Date(medianEp).toISOString().slice(0,10)}`;
+  restoreFilters();updateNote()}
+function idb(){return new Promise((res,rej)=>{const r=indexedDB.open('who-owns-orbit',1);r.onupgradeneeded=()=>r.result.createObjectStore('kv');r.onsuccess=()=>res(r.result);r.onerror=()=>rej(r.error)})}
+async function kv(op,key,val){try{const db=await idb();return await new Promise((res,rej)=>{const tx=db.transaction('kv',op?'readwrite':'readonly'),st=tx.objectStore('kv'),q=op?st.put(val,key):st.get(key);q.onsuccess=()=>res(q.result);q.onerror=()=>rej(q.error)})}catch(e){return null}}
+function persist(rows){kv(1,'rows',{rows,saved:Date.now()})}
+function save(){try{localStorage.setItem('woo-off',JSON.stringify(groups.filter(g=>!g.on).map(g=>g.code)))}catch(e){}}
+function restoreFilters(){try{const off=JSON.parse(localStorage.getItem('woo-off')||'[]');groups.forEach(g=>g.on=!off.includes(g.code));updateVisible()}catch(e){}}
+$('pick').onclick=()=>$('file').click();
+$('file').onchange=e=>handleFiles([...e.target.files]);
+$('reload').onclick=()=>{pend={gp:null,cat:null};$('status').textContent='';$('load').classList.add('on')};
+$('load').addEventListener('click',e=>{if(e.target===$('load')&&N)$('load').classList.remove('on')});
+const dz=$('drop');
+['dragenter','dragover'].forEach(t=>$('stage').addEventListener(t,e=>{e.preventDefault();$('load').classList.add('on');dz.classList.add('over')}));
+['dragleave','drop'].forEach(t=>dz.addEventListener(t,()=>dz.classList.remove('over')));
+$('stage').addEventListener('drop',e=>{e.preventDefault();dz.classList.remove('over');handleFiles([...e.dataTransfer.files])});
+
+/* ---------- WebGL ---------- */
+const cv=$('gl'),gl=cv.getContext('webgl',{antialias:true,alpha:true,premultipliedAlpha:false});
+function sh(vs,fs){const p=gl.createProgram();for(const[t,s]of[[gl.VERTEX_SHADER,vs],[gl.FRAGMENT_SHADER,fs]]){const o=gl.createShader(t);gl.shaderSource(o,s);gl.compileShader(o);if(!gl.getShaderParameter(o,gl.COMPILE_STATUS))throw new Error(gl.getShaderInfoLog(o));gl.attachShader(p,o)}
+  gl.linkProgram(p);const u={},a={};const nu=gl.getProgramParameter(p,gl.ACTIVE_UNIFORMS),na=gl.getProgramParameter(p,gl.ACTIVE_ATTRIBUTES);
+  for(let i=0;i<nu;i++){const n=gl.getActiveUniform(p,i).name;u[n]=gl.getUniformLocation(p,n)}for(let i=0;i<na;i++){const n=gl.getActiveAttrib(p,i).name;a[n]=gl.getAttribLocation(p,n)}return{p,u,a}}
+const earthP=sh(`attribute vec3 P;attribute vec2 T;uniform mat4 vp;uniform float g;varying vec3 n;varying vec2 uv;
+void main(){float c=cos(g),s=sin(g);vec3 w=vec3(c*P.x-s*P.y,s*P.x+c*P.y,P.z);n=w;uv=T;gl_Position=vp*vec4(w,1.0);}`,
+`precision mediump float;uniform sampler2D tx;uniform vec3 sun;uniform vec3 eye;uniform float shade;varying vec3 n;varying vec2 uv;
+void main(){vec3 N=normalize(n);vec3 c=texture2D(tx,uv).rgb;float d=dot(N,sun);float day=mix(1.0,0.32+0.78*smoothstep(-0.12,0.2,d),shade);
+float rim=pow(1.0-max(dot(N,normalize(eye-N)),0.0),3.0);gl_FragColor=vec4(c*day+vec3(0.25,0.55,0.9)*rim*0.55,1.0);}`);
+const ptP=sh(`attribute vec3 P;attribute vec3 C;uniform mat4 vp;uniform vec3 eye;uniform float sz;varying vec3 c;
+void main(){c=C;gl_Position=vp*vec4(P,1.0);gl_PointSize=sz*clamp(3.2/distance(eye,P),0.7,2.4);}`,
+`precision mediump float;varying vec3 c;void main(){vec2 q=gl_PointCoord-0.5;float r=dot(q,q);if(r>0.25)discard;gl_FragColor=vec4(c,1.0-smoothstep(0.16,0.25,r));}`);
+const lnP=sh(`attribute vec3 P;attribute vec3 C;uniform mat4 vp;varying vec3 c;void main(){c=C;gl_Position=vp*vec4(P,1.0);}`,
+`precision mediump float;uniform float al;varying vec3 c;void main(){gl_FragColor=vec4(c,al);}`);
+// sphere
+const sph=(()=>{const la=64,lo=128,v=[],t=[],ix=[];for(let i=0;i<=la;i++){const lat=90-180*i/la;for(let j=0;j<=lo;j++){const lon=-180+360*j/lo,cl=Math.cos(lat*D2R);
+  v.push(cl*Math.cos(lon*D2R),cl*Math.sin(lon*D2R),Math.sin(lat*D2R));t.push(j/lo,i/la)}}
+  for(let i=0;i<la;i++)for(let j=0;j<lo;j++){const a=i*(lo+1)+j,b=a+lo+1;ix.push(a,b,a+1,b,b+1,a+1)}
+  const mk=(d,T=gl.ARRAY_BUFFER)=>{const b=gl.createBuffer();gl.bindBuffer(T,b);gl.bufferData(T,d,gl.STATIC_DRAW);return b};
+  return{v:mk(new Float32Array(v)),t:mk(new Float32Array(t)),i:mk(new Uint16Array(ix),gl.ELEMENT_ARRAY_BUFFER),n:ix.length}})();
+// earth texture drawn on a canvas
+const tc=document.createElement('canvas');tc.width=2048;tc.height=1024;const tx=tc.getContext('2d');
+const X=l=>(l+180)/360*2048,Y=l=>(90-l)/180*1024;
+function drawEarth(polys){
+  tx.fillStyle='#0c2033';tx.fillRect(0,0,2048,1024);
+  if(polys){tx.fillStyle='#24423f';tx.strokeStyle='#3b6560';tx.lineWidth=1.1;
+    for(const ring of polys){if(ring.length<3)continue;const u=[[ring[0][0],ring[0][1]]];
+      for(let i=1;i<ring.length;i++){let l=ring[i][0];const pv=u[i-1][0];while(l-pv>180)l-=360;while(l-pv<-180)l+=360;u.push([l,ring[i][1]])}
+      const span=u[u.length-1][0]-u[0][0];if(Math.abs(span)>300){const pole=u[0][1]<0?-90:90;u.push([u[u.length-1][0],pole]);u.push([u[0][0],pole])}
+      for(const off of[-360,0,360]){tx.beginPath();u.forEach(([l,b],i)=>i?tx.lineTo(X(l+off),Y(b)):tx.moveTo(X(l+off),Y(b)));tx.closePath();tx.fill();tx.stroke()}}}
+  tx.strokeStyle='rgba(140,180,220,0.14)';tx.lineWidth=1;
+  for(let l=-150;l<=180;l+=30){tx.beginPath();tx.moveTo(X(l),0);tx.lineTo(X(l),1024);tx.stroke()}
+  for(let b=-60;b<=60;b+=30){tx.beginPath();tx.moveTo(0,Y(b));tx.lineTo(2048,Y(b));tx.stroke()}
+  tx.strokeStyle='rgba(140,180,220,0.28)';tx.beginPath();tx.moveTo(0,512);tx.lineTo(2048,512);tx.stroke();
+  gl.bindTexture(gl.TEXTURE_2D,etex);gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,gl.RGBA,gl.UNSIGNED_BYTE,tc);gl.generateMipmap(gl.TEXTURE_2D);
+  gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.LINEAR_MIPMAP_LINEAR);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_S,gl.CLAMP_TO_EDGE)}
+const etex=gl.createTexture();drawEarth(null);
+// coastlines from the echarts world map script (registers itself through a stub)
+function decodeRing(s,off,sc){const r=[];let x0=off[0],y0=off[1];for(let i=0;i<s.length;i+=2){let x=s.charCodeAt(i)-64,y=s.charCodeAt(i+1)-64;x=(x>>1)^-(x&1);y=(y>>1)^-(y&1);x+=x0;y+=y0;x0=x;y0=y;r.push([x/sc,y/sc])}return r}
+window.echarts={registerMap(name,geo){try{const enc=geo.UTF8Encoding,sc=geo.UTF8Scale||1024,rings=[];
+  for(const f of geo.features){const G=f.geometry;if(!G)continue;const polys=G.type==='Polygon'?[G.coordinates]:G.coordinates,offs=G.type==='Polygon'?[G.encodeOffsets]:G.encodeOffsets;
+    polys.forEach((poly,pi)=>poly.forEach((ring,ri)=>rings.push(enc?decodeRing(ring,offs[pi][ri],sc):ring)))}
+  drawEarth(rings)}catch(e){console.warn('map decode failed',e)}}};
+const ms=document.createElement('script');ms.src='https://cdn.jsdelivr.net/npm/echarts@4.9.0/map/js/world.js';ms.async=true;ms.onerror=()=>{};document.head.appendChild(ms);
+window.__testMap=window.echarts.registerMap;
+
+const bPos=gl.createBuffer(),bCol=gl.createBuffer(),bTP=gl.createBuffer(),bTC=gl.createBuffer(),bSP=gl.createBuffer(),bSC=gl.createBuffer();
+const bOne=gl.createBuffer(),bWhite=gl.createBuffer();gl.bindBuffer(gl.ARRAY_BUFFER,bWhite);gl.bufferData(gl.ARRAY_BUFFER,new Float32Array([1,1,1]),gl.STATIC_DRAW);
+let posBuf=new Float32Array(0),colBuf=new Float32Array(0),trkVerts=0,selVerts=0;
+const rgb=h=>[parseInt(h.slice(1,3),16)/255,parseInt(h.slice(3,5),16)/255,parseInt(h.slice(5,7),16)/255];
+function rebuildColors(){
+  posBuf=new Float32Array(visCount*3);colBuf=new Float32Array(visCount*3);const gc=groups.map(g=>rgb(g.color));
+  visible.forEach((k,i)=>{const c=gc[S.g[k]];colBuf[i*3]=c[0];colBuf[i*3+1]=c[1];colBuf[i*3+2]=c[2]});
+  gl.bindBuffer(gl.ARRAY_BUFFER,bCol);gl.bufferData(gl.ARRAY_BUFFER,colBuf,gl.STATIC_DRAW);
+  gl.bindBuffer(gl.ARRAY_BUFFER,bPos);gl.bufferData(gl.ARRAY_BUFFER,posBuf.byteLength||12,gl.DYNAMIC_DRAW);colorsDirty=false}
+function rebuildTracks(){
+  tracksDirty=false;trackT=simT;trkVerts=0;selVerts=0;const per=TSEG*6;
+  if(trkMode==='all'&&visCount){
+    const order=visible.slice().sort((a,b)=>groups[S.g[a]].vis-groups[S.g[b]].vis),use=order.slice(0,trkCap);
+    const P=new Float32Array(use.length*per),C=new Float32Array(use.length*per),gc=groups.map(g=>rgb(g.color));let o=0;
+    for(const k of use){const s=o;o=orbitLine(k,simT,P,o);const c=gc[S.g[k]];for(let j=s;j<o;j+=3){C[j]=c[0];C[j+1]=c[1];C[j+2]=c[2]}}
+    trkVerts=o/3;gl.bindBuffer(gl.ARRAY_BUFFER,bTP);gl.bufferData(gl.ARRAY_BUFFER,P,gl.STATIC_DRAW);gl.bindBuffer(gl.ARRAY_BUFFER,bTC);gl.bufferData(gl.ARRAY_BUFFER,C,gl.STATIC_DRAW)}
+  if(selected>=0&&trkMode!=='off'){const P=new Float32Array(per),C=new Float32Array(per).fill(1);orbitLine(selected,simT,P,0);selVerts=TSEG*2;
+    gl.bindBuffer(gl.ARRAY_BUFFER,bSP);gl.bufferData(gl.ARRAY_BUFFER,P,gl.STATIC_DRAW);gl.bindBuffer(gl.ARRAY_BUFFER,bSC);gl.bufferData(gl.ARRAY_BUFFER,C,gl.STATIC_DRAW)}}
+
+/* ---------- camera & matrices ---------- */
+function persp(f,a,n,fa){const t=1/Math.tan(f/2),nf=1/(n-fa);return[t/a,0,0,0,0,t,0,0,0,0,(fa+n)*nf,-1,0,0,2*fa*n*nf,0]}
+function look(e,c,u){let z=norm(sub(e,c)),x=norm(cross(u,z)),y=cross(z,x);return[x[0],y[0],z[0],0,x[1],y[1],z[1],0,x[2],y[2],z[2],0,-dot(x,e),-dot(y,e),-dot(z,e),1]}
+function mul(a,b){const r=new Array(16);for(let i=0;i<4;i++)for(let j=0;j<4;j++){let s=0;for(let k=0;k<4;k++)s+=a[k*4+j]*b[i*4+k];r[i*4+j]=s}return r}
+const sub=(a,b)=>[a[0]-b[0],a[1]-b[1],a[2]-b[2]],dot=(a,b)=>a[0]*b[0]+a[1]*b[1]+a[2]*b[2],cross=(a,b)=>[a[1]*b[2]-a[2]*b[1],a[2]*b[0]-a[0]*b[2],a[0]*b[1]-a[1]*b[0]],norm=a=>{const l=Math.hypot(...a)||1;return[a[0]/l,a[1]/l,a[2]/l]};
+let VP=null,EYE=[0,0,0];
+const ptrs=new Map();let dragged=0,pinch0=0;
+cv.addEventListener('pointerdown',e=>{cv.setPointerCapture(e.pointerId);ptrs.set(e.pointerId,[e.clientX,e.clientY]);dragged=0;cv.classList.add('drag');if(ptrs.size===2){const[a,b]=[...ptrs.values()];pinch0=Math.hypot(a[0]-b[0],a[1]-b[1])}});
+cv.addEventListener('pointermove',e=>{if(!ptrs.has(e.pointerId))return;const p=ptrs.get(e.pointerId),dx=e.clientX-p[0],dy=e.clientY-p[1];
+  if(ptrs.size===1){cam.yaw-=dx*0.005*Math.min(cam.dist/4,1.5);cam.pitch=Math.max(-1.45,Math.min(1.45,cam.pitch+dy*0.005*Math.min(cam.dist/4,1.5)))}
+  ptrs.set(e.pointerId,[e.clientX,e.clientY]);dragged+=Math.abs(dx)+Math.abs(dy);
+  if(ptrs.size===2){const[a,b]=[...ptrs.values()],d=Math.hypot(a[0]-b[0],a[1]-b[1]);if(pinch0){zoom(pinch0/d)}pinch0=d}});
+const up=e=>{ptrs.delete(e.pointerId);if(!ptrs.size)cv.classList.remove('drag');pinch0=0};
+cv.addEventListener('pointerup',e=>{const was=ptrs.size===1;up(e);if(was&&dragged<6)pick(e)});cv.addEventListener('pointercancel',up);
+cv.addEventListener('wheel',e=>{e.preventDefault();zoom(Math.exp(e.deltaY*0.0012))},{passive:false});
+function zoom(f){cam.dist=Math.max(1.25,Math.min(24,cam.dist*f))}
+function pick(e){
+  if(!VP||!visCount)return;const r=cv.getBoundingClientRect(),mx=e.clientX-r.left,my=e.clientY-r.top;let best=-1,bd=14*14;
+  for(let i=0;i<visCount;i++){const x=posBuf[i*3],y=posBuf[i*3+1],z=posBuf[i*3+2];
+    const cw=VP[3]*x+VP[7]*y+VP[11]*z+VP[15];if(cw<=0)continue;
+    const sx=(VP[0]*x+VP[4]*y+VP[8]*z+VP[12])/cw,sy=(VP[1]*x+VP[5]*y+VP[9]*z+VP[13])/cw,px=(sx+1)/2*r.width,py=(1-sy)/2*r.height,d=(px-mx)**2+(py-my)**2;
+    if(d<bd&&!hidden([x,y,z])){bd=d;best=i}}
+  setSel(best<0?-1:visible[best])}
+function hidden(p){const d=sub(p,EYE),a=dot(d,d),b=2*dot(EYE,d),c=dot(EYE,EYE)-1,D=b*b-4*a*c;if(D<0)return false;const t=(-b-Math.sqrt(D))/(2*a);return t>0&&t<1}
+
+/* ---------- frame loop ---------- */
+function bind(prog,name,buf,size){const l=prog.a[name];if(l<0||l===undefined)return;gl.bindBuffer(gl.ARRAY_BUFFER,buf);gl.enableVertexAttribArray(l);gl.vertexAttribPointer(l,size,gl.FLOAT,false,0,0)}
+let last=performance.now(),infoT=0;
+function frame(now){
+  const dt=Math.min(now-last,250);last=now;if(playing)simT+=dt*speed;
+  const dpr=Math.min(devicePixelRatio||1,2),w=Math.round(cv.clientWidth*dpr),h=Math.round(cv.clientHeight*dpr);if(cv.width!==w||cv.height!==h){cv.width=w;cv.height=h}
+  gl.viewport(0,0,w,h);gl.clearColor(0,0,0,0);gl.clear(gl.COLOR_BUFFER_BIT|gl.DEPTH_BUFFER_BIT);
+  const cp=Math.cos(cam.pitch);EYE=[cam.dist*cp*Math.cos(cam.yaw),cam.dist*cp*Math.sin(cam.yaw),cam.dist*Math.sin(cam.pitch)];
+  VP=mul(persp(0.75,w/Math.max(h,1),0.05,100),look(EYE,[0,0,0],[0,0,1]));
+  gl.enable(gl.DEPTH_TEST);gl.depthMask(true);gl.disable(gl.BLEND);
+  gl.useProgram(earthP.p);gl.uniformMatrix4fv(earthP.u.vp,false,VP);gl.uniform1f(earthP.u.g,gmst(simT));gl.uniform3fv(earthP.u.sun,sunDir(simT));gl.uniform3fv(earthP.u.eye,EYE);gl.uniform1f(earthP.u.shade,$('night').checked?1:0);
+  gl.activeTexture(gl.TEXTURE0);gl.bindTexture(gl.TEXTURE_2D,etex);gl.uniform1i(earthP.u.tx,0);
+  bind(earthP,'P',sph.v,3);bind(earthP,'T',sph.t,2);gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER,sph.i);gl.drawElements(gl.TRIANGLES,sph.n,gl.UNSIGNED_SHORT,0);
+  for(const a of Object.values(earthP.a))gl.disableVertexAttribArray(a);
+  if(N){
+    if(colorsDirty)rebuildColors();
+    if(tracksDirty||Math.abs(simT-trackT)>3*3600e3)rebuildTracks();
+    for(let i=0;i<visCount;i++)posAt(visible[i],simT,posBuf,i*3);
+    gl.enable(gl.BLEND);gl.blendFunc(gl.SRC_ALPHA,gl.ONE_MINUS_SRC_ALPHA);gl.depthMask(false);
+    if(trkVerts){gl.useProgram(lnP.p);gl.uniformMatrix4fv(lnP.u.vp,false,VP);gl.uniform1f(lnP.u.al,trkVerts>400000?0.16:trkVerts>60000?0.26:0.45);bind(lnP,'P',bTP,3);bind(lnP,'C',bTC,3);gl.drawArrays(gl.LINES,0,trkVerts)}
+    if(selVerts){gl.useProgram(lnP.p);gl.uniformMatrix4fv(lnP.u.vp,false,VP);gl.uniform1f(lnP.u.al,0.95);bind(lnP,'P',bSP,3);bind(lnP,'C',bSC,3);gl.drawArrays(gl.LINES,0,selVerts)}
+    gl.blendFunc(gl.SRC_ALPHA,gl.ONE_MINUS_SRC_ALPHA);gl.depthMask(true);
+    if(visCount){gl.useProgram(ptP.p);gl.uniformMatrix4fv(ptP.u.vp,false,VP);gl.uniform3fv(ptP.u.eye,EYE);gl.uniform1f(ptP.u.sz,(visCount>8000?3.2:4.2)*dpr);
+      gl.bindBuffer(gl.ARRAY_BUFFER,bPos);gl.bufferSubData(gl.ARRAY_BUFFER,0,posBuf);bind(ptP,'P',bPos,3);bind(ptP,'C',bCol,3);gl.drawArrays(gl.POINTS,0,visCount)}
+    if(selected>=0){gl.bindBuffer(gl.ARRAY_BUFFER,bOne);gl.bufferData(gl.ARRAY_BUFFER,new Float32Array(posAt(selected,simT,[0,0,0],0)),gl.STREAM_DRAW);
+      gl.useProgram(ptP.p);gl.uniform1f(ptP.u.sz,11*dpr);bind(ptP,'P',bOne,3);bind(ptP,'C',bWhite,3);gl.drawArrays(gl.POINTS,0,1)}
+    for(const p of[ptP,lnP])for(const a of Object.values(p.a))gl.disableVertexAttribArray(a);
+    if(selected>=0&&now-infoT>500){infoT=now;fillInfo()}
+  }
+  const d=new Date(simT);$('utc').textContent=fU.format(d)+' UTC';$('loc').textContent=(playing?speed+'× · ':'Paused · ')+'Your time '+fL.format(d);
+  requestAnimationFrame(frame)}
+
+/* ---------- start ---------- */
+async function fromSite(){try{const r=await fetch('data/sats.json',{cache:'no-cache'});if(!r.ok)return false;const j=await r.json();if(!j.rows||!j.rows.length)return false;
+  apply(j.rows,Date.parse(j.generated));const h=Math.max(0,Math.round((Date.now()-Date.parse(j.generated))/36e5));
+  $('dataline').textContent=`${j.rows.length.toLocaleString()} satellites · updated automatically ${h<1?'within the hour':h+' h ago'}`;return true}catch(e){return false}}
+(async()=>{syncTime();if(!(await fromSite())){const st=await kv(0,'rows');if(st&&st.rows&&st.rows.length){apply(st.rows,st.saved)}else $('load').classList.add('on')}requestAnimationFrame(frame)})();
+window.__app={handleFiles,classify,joinData,posAt:(k,t)=>posAt(k,t,[0,0,0],0),get S(){return S},get groups(){return groups},setSel,get state(){return{N,visCount,trkVerts,selected}}};
+}
+</script>
+</body>
+</html>
