@@ -91,6 +91,11 @@ canvas.drag{cursor:grabbing}
   .clock{margin-left:0;text-align:left}
   h1{font-size:21px}
   .hint{display:none}
+  .info{top:auto;bottom:8px;left:8px;right:8px;width:auto;padding:10px 12px}
+  .info h2{font-size:18px}.info .own{margin-bottom:6px}
+  .info dl{grid-template-columns:auto 1fr auto 1fr;gap:2px 10px;font-size:12.5px}
+  .info button{position:absolute;top:8px;right:8px;margin:0}
+  .note{top:8px;bottom:auto;left:8px;max-width:calc(100% - 16px)}
   #load{position:relative;inset:auto}
   .stage:has(#load.on){height:auto;min-height:0}
   .stage:has(#load.on) canvas{display:none}
@@ -324,21 +329,22 @@ const fL=new Intl.DateTimeFormat(undefined,{weekday:'short',hour:'2-digit',minut
 let medianEp=0;
 function updateNote(){
   const n=$('note');let msg='',warn=false;
-  if(N&&(trkMode==='all'||trkMode==='trail')){const c=visCount;if(c>trkCap){msg=`Trails drawn for ${trkCap.toLocaleString()} of ${c.toLocaleString()} shown satellites (smaller owners first). Untick Starlink or raise the track limit to see the rest.`}}
+  if(N&&(trkMode==='all'||trkMode==='trail')){const c=visCount;if(c>trkCap){msg=`Trails drawn for ${trkCap.toLocaleString()} of ${c.toLocaleString()} shown satellites (smaller owners first). Untick Starlink or raise the track limit to see the rest.`;if(innerWidth<=760)msg=`Trails on ${trkCap.toLocaleString()} of ${c.toLocaleString()} satellites. Untick Starlink to see more.`}}
   if(N&&medianEp){const age=Math.abs(simT-medianEp)/DAY;if(age>14){msg=`Orbit data is ${Math.round(age)} days from the time shown, so positions have drifted. Load fresh files for accuracy.`;warn=true}}
   n.hidden=!msg;n.textContent=msg;n.classList.toggle('warn',warn)}
 function setSel(k){selected=k;tracksDirty=true;const box=$('info');if(k<0){box.classList.remove('on');box.innerHTML='';return}box.classList.add('on');fillInfo()}
+function live(k){const p=posAt(k,simT,[0,0,0],0),rr=Math.hypot(p[0],p[1],p[2])*RE;return[Math.round(rr-RE).toLocaleString()+' km',Math.sqrt(MU*(2/rr-1/S.a[k])).toFixed(2)+' km/s']}
 function fillInfo(){
-  const k=selected;if(k<0)return;const r=S.meta[k],g=groups[S.g[k]],p=posAt(k,simT,[0,0,0],0),rr=Math.hypot(p[0],p[1],p[2])*RE,
-    v=Math.sqrt(MU*(2/rr-1/S.a[k])),per=TAU/S.n[k]/60;
+  const k=selected;if(k<0)return;const r=S.meta[k],g=groups[S.g[k]],[alt,spd]=live(k),per=TAU/S.n[k]/60;
   const ep=new Date(r[5]).toISOString().slice(0,10);
   $('info').innerHTML=`<h2>${esc(r[1]||'Unnamed')}</h2><div class="own"><span class="sw" style="background:${g.color}"></span>${esc(g.name)}</div>
   <dl><dt>NORAD ID</dt><dd>${esc(r[0])}</dd><dt>Designator</dt><dd>${esc(r[2]||'—')}</dd><dt>Launched</dt><dd>${esc(r[4]||'—')}</dd>
   <dt>Orbit</dt><dd>${['Low','Medium','Geostationary','Elliptical / high'][S.cls[k]]}</dd>
-  <dt>Altitude now</dt><dd>${Math.round(rr-RE).toLocaleString()} km</dd><dt>Speed</dt><dd>${v.toFixed(2)} km/s</dd>
+  <dt>Altitude now</dt><dd id="i-alt">${alt}</dd><dt>Speed</dt><dd id="i-spd">${spd}</dd>
   <dt>Period</dt><dd>${per<180?per.toFixed(1)+' min':(per/60).toFixed(2)+' h'}</dd><dt>Inclination</dt><dd>${(S.inc[k]/D2R).toFixed(1)}°</dd>
   <dt>Data epoch</dt><dd>${ep}</dd></dl><button id="clr">Close</button>`;
   $('clr').onclick=()=>setSel(-1)}
+function liveInfo(){if(selected<0||!$('i-alt'))return;const[a,v]=live(selected);$('i-alt').textContent=a;$('i-spd').textContent=v}
 
 /* ---------- loading & storage ---------- */
 let pend={gp:null,cat:null};
@@ -464,7 +470,7 @@ cv.addEventListener('pointerup',e=>{const was=ptrs.size===1;up(e);if(was&&dragge
 cv.addEventListener('wheel',e=>{e.preventDefault();zoom(Math.exp(e.deltaY*0.0012))},{passive:false});
 function zoom(f){cam.dist=Math.max(1.25,Math.min(24,cam.dist*f))}
 function pick(e){
-  if(!VP||!visCount)return;const r=cv.getBoundingClientRect(),mx=e.clientX-r.left,my=e.clientY-r.top;let best=-1,bd=14*14;
+  if(!VP||!visCount)return;const r=cv.getBoundingClientRect(),mx=e.clientX-r.left,my=e.clientY-r.top;let best=-1,bd=e.pointerType==='touch'?26*26:14*14;
   for(let i=0;i<visCount;i++){const x=posBuf[i*3],y=posBuf[i*3+1],z=posBuf[i*3+2];
     const cw=VP[3]*x+VP[7]*y+VP[11]*z+VP[15];if(cw<=0)continue;
     const sx=(VP[0]*x+VP[4]*y+VP[8]*z+VP[12])/cw,sy=(VP[1]*x+VP[5]*y+VP[9]*z+VP[13])/cw,px=(sx+1)/2*r.width,py=(1-sy)/2*r.height,d=(px-mx)**2+(py-my)**2;
@@ -504,7 +510,7 @@ function frame(now){
     if(selected>=0){gl.bindBuffer(gl.ARRAY_BUFFER,bOne);gl.bufferData(gl.ARRAY_BUFFER,new Float32Array(posAt(selected,simT,[0,0,0],0)),gl.STREAM_DRAW);
       gl.useProgram(ptP.p);gl.uniform1f(ptP.u.sz,11*dpr);bind(ptP,'P',bOne,3);bind(ptP,'C',bWhite,3);gl.drawArrays(gl.POINTS,0,1)}
     for(const p of[ptP,lnP])for(const a of Object.values(p.a))gl.disableVertexAttribArray(a);
-    if(selected>=0&&now-infoT>500){infoT=now;fillInfo()}
+    if(selected>=0&&now-infoT>500){infoT=now;liveInfo()}
   }
   const d=new Date(simT);$('utc').textContent=fU.format(d)+' UTC';$('loc').textContent=(playing?speed+'× · ':'Paused · ')+'Your time '+fL.format(d);
   requestAnimationFrame(frame)}
@@ -513,7 +519,7 @@ function frame(now){
 async function fromSite(){try{const r=await fetch('data/sats.json',{cache:'no-cache'});if(!r.ok)return false;const j=await r.json();if(!j.rows||!j.rows.length)return false;
   apply(j.rows,Date.parse(j.generated));const h=Math.max(0,Math.round((Date.now()-Date.parse(j.generated))/36e5));
   $('dataline').textContent=`${j.rows.length.toLocaleString()} satellites · updated automatically ${h<1?'within the hour':h+' h ago'}`;return true}catch(e){return false}}
-(async()=>{syncTime();if(!(await fromSite())){const st=await kv(0,'rows');if(st&&st.rows&&st.rows.length){apply(st.rows,st.saved)}else $('load').classList.add('on')}requestAnimationFrame(frame)})();
+(async()=>{syncTime();if(matchMedia('(max-width:760px),(pointer:coarse)').matches){trkCap=2000;$('cap').value='2000'}if(!(await fromSite())){const st=await kv(0,'rows');if(st&&st.rows&&st.rows.length){apply(st.rows,st.saved)}else $('load').classList.add('on')}requestAnimationFrame(frame)})();
 window.__app={handleFiles,classify,joinData,posAt:(k,t)=>posAt(k,t,[0,0,0],0),get S(){return S},get groups(){return groups},setSel,get state(){return{N,visCount,trkVerts,selected}}};
 }
 </script>
