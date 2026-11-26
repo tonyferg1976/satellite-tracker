@@ -140,6 +140,7 @@ canvas.drag{cursor:grabbing}
         <select id="tlen"><option value="0.08">Short</option><option value="0.2" selected>Medium</option><option value="0.4">Long</option></select></div>
       <label class="toggle" style="align-self:end;min-height:36px"><input type="checkbox" id="night" checked> Day/night</label>
     </div>
+    <label class="toggle" title="Speeds up higher satellites so every orbit takes about 100 minutes. Positions of sped-up satellites are then for display, not real."><input type="checkbox" id="eq" checked> Equal speeds: outer satellites keep pace with low ones</label>
   </div>
   <div id="list" role="group" aria-label="Owners"></div>
   <div class="foot"><span id="dataline">No data loaded</span><button id="reload">Load new data files</button></div>
@@ -182,7 +183,7 @@ const esc=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'
 
 /* ---------- state ---------- */
 let N=0, S=null, groups=[], gIndex={}, visible=[], visCount=0;
-let simT=Date.now(), speed=60, playing=true, selected=-1;
+let eqOn=true,anchor=Date.now(),simT=Date.now(), speed=60, playing=true, selected=-1;
 let orbOn={LEO:1,MEO:1,GEO:1,HEO:1}, trkMode='trail', trailFrac=0.2, trailList=[], trCol=null, trPos=null, trkCap=6000, tracksDirty=true, trackT=0, colorsDirty=true;
 const cam={yaw:-0.6,pitch:0.35,dist:4.2};
 
@@ -235,13 +236,13 @@ function joinData(gp,cat){
 function build(rows){
   N=rows.length;
   S={n:new Float64Array(N),e:new Float64Array(N),inc:new Float64Array(N),ra0:new Float64Array(N),w0:new Float64Array(N),M0:new Float64Array(N),
-     ep:new Float64Array(N),ndd:new Float64Array(N),a:new Float64Array(N),raD:new Float64Array(N),wD:new Float64Array(N),mD:new Float64Array(N),
+     ep:new Float64Array(N),ndd:new Float64Array(N),sc:new Float64Array(N),a:new Float64Array(N),raD:new Float64Array(N),wD:new Float64Array(N),mD:new Float64Array(N),
      g:new Int32Array(N),cls:new Uint8Array(N),meta:new Array(N),pos:new Float32Array(N*3)};
   const gm={};groups=[];
   rows.forEach((r,k)=>{
     const n=r[6]*TAU/86400,e=Math.min(Math.max(r[7],0),0.99),i=r[8]*D2R,a=Math.cbrt(MU/(n*n)),p=a*(1-e*e),f=1.5*n*J2*(RE/p)**2,ci=Math.cos(i);
     S.n[k]=n;S.e[k]=e;S.inc[k]=i;S.ra0[k]=r[9]*D2R;S.w0[k]=r[10]*D2R;S.M0[k]=r[11]*D2R;S.ep[k]=r[5];S.a[k]=a;
-    S.ndd[k]=r[12]*TAU/(86400*86400);S.raD[k]=-f*ci;S.wD[k]=0.5*f*(5*ci*ci-1);S.mD[k]=n+0.5*f*Math.sqrt(1-e*e)*(3*ci*ci-1);
+    S.ndd[k]=r[12]*TAU/(86400*86400);S.sc[k]=Math.max(1,(TAU/n)/(100*60));S.raD[k]=-f*ci;S.wD[k]=0.5*f*(5*ci*ci-1);S.mD[k]=n+0.5*f*Math.sqrt(1-e*e)*(3*ci*ci-1);
     const apo=a*(1+e)-RE,alt=a-RE;S.cls[k]=e>0.25||alt>37500?3:apo<2200?0:alt<34500?1:2;
     if(!(r[3] in gm)){gm[r[3]]=groups.length;groups.push({code:r[3],name:OWN[r[3]]||r[3],count:0,vis:0,on:true,color:'#888'})}
     S.g[k]=gm[r[3]];groups[S.g[k]].count++;S.meta[k]=r});
@@ -313,13 +314,14 @@ $('none').onclick=()=>{groups.forEach(g=>g.on=false);updateVisible();save()};
 $('top').onclick=()=>{const t=[...groups].sort((a,b)=>b.vis-a.vis).slice(0,10);groups.forEach(g=>g.on=t.includes(g));updateVisible();save()};
 for(const b of $('orb').querySelectorAll('button'))b.onclick=()=>{const o=b.dataset.o;orbOn[o]=orbOn[o]?0:1;b.setAttribute('aria-pressed',!!orbOn[o]);updateVisible()};
 $('trk').onchange=e=>{trkMode=e.target.value;tracksDirty=true;updateNote()};
+$('eq').onchange=e=>{eqOn=e.target.checked;anchor=simT;tracksDirty=true;fillInfo()};
 $('tlen').onchange=e=>{trailFrac=+e.target.value};
 $('cap').onchange=e=>{trkCap=+e.target.value;tracksDirty=true;updateNote()};
 
 /* ---------- time ---------- */
 for(const b of document.querySelectorAll('[data-sp]'))b.onclick=()=>{speed=+b.dataset.sp;playing=true;syncTime()};
 $('play').onclick=()=>{playing=!playing;syncTime()};
-$('now').onclick=()=>{simT=Date.now();playing=true;tracksDirty=true;syncTime()};
+$('now').onclick=()=>{simT=Date.now();anchor=simT;playing=true;tracksDirty=true;syncTime()};
 function syncTime(){for(const b of document.querySelectorAll('[data-sp]'))b.setAttribute('aria-pressed',+b.dataset.sp===speed);
   $('play').textContent=playing?'❚❚':'▶';$('play').setAttribute('aria-label',playing?'Pause':'Play')}
 const fU=new Intl.DateTimeFormat('en-GB',{timeZone:'UTC',day:'numeric',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:false});
@@ -333,13 +335,14 @@ function updateNote(){
   if(N&&medianEp){const age=Math.abs(simT-medianEp)/DAY;if(age>14){msg=`Orbit data is ${Math.round(age)} days from the time shown, so positions have drifted. Load fresh files for accuracy.`;warn=true}}
   n.hidden=!msg;n.textContent=msg;n.classList.toggle('warn',warn)}
 function setSel(k){selected=k;tracksDirty=true;const box=$('info');if(k<0){box.classList.remove('on');box.innerHTML='';return}box.classList.add('on');fillInfo()}
-function live(k){const p=posAt(k,simT,[0,0,0],0),rr=Math.hypot(p[0],p[1],p[2])*RE;return[Math.round(rr-RE).toLocaleString()+' km',Math.sqrt(MU*(2/rr-1/S.a[k])).toFixed(2)+' km/s']}
+const tOf=k=>eqOn?anchor+(simT-anchor)*S.sc[k]:simT;
+function live(k){const p=posAt(k,tOf(k),[0,0,0],0),rr=Math.hypot(p[0],p[1],p[2])*RE;return[Math.round(rr-RE).toLocaleString()+' km',Math.sqrt(MU*(2/rr-1/S.a[k])).toFixed(2)+' km/s']}
 function fillInfo(){
   const k=selected;if(k<0)return;const r=S.meta[k],g=groups[S.g[k]],[alt,spd]=live(k),per=TAU/S.n[k]/60;
   const ep=new Date(r[5]).toISOString().slice(0,10);
   $('info').innerHTML=`<h2>${esc(r[1]||'Unnamed')}</h2><div class="own"><span class="sw" style="background:${g.color}"></span>${esc(g.name)}</div>
   <dl><dt>NORAD ID</dt><dd>${esc(r[0])}</dd><dt>Designator</dt><dd>${esc(r[2]||'—')}</dd><dt>Launched</dt><dd>${esc(r[4]||'—')}</dd>
-  <dt>Orbit</dt><dd>${['Low','Medium','Geostationary','Elliptical / high'][S.cls[k]]}</dd>
+  <dt>Orbit</dt><dd>${['Low','Medium','Geostationary','Elliptical / high'][S.cls[k]]}</dd>${eqOn&&S.sc[k]>1.05?`<dt>Shown at</dt><dd>${S.sc[k].toFixed(S.sc[k]<10?1:0)}× real speed</dd>`:''}
   <dt>Altitude now</dt><dd id="i-alt">${alt}</dd><dt>Speed</dt><dd id="i-spd">${spd}</dd>
   <dt>Period</dt><dd>${per<180?per.toFixed(1)+' min':(per/60).toFixed(2)+' h'}</dd><dt>Inclination</dt><dd>${(S.inc[k]/D2R).toFixed(1)}°</dd>
   <dt>Data epoch</dt><dd>${ep}</dd></dl><button id="clr">Close</button>`;
@@ -450,7 +453,7 @@ function rebuildTracks(){
     const P=new Float32Array(use.length*per),C=new Float32Array(use.length*per),gc=groups.map(g=>rgb(g.color));let o=0;
     for(const k of use){const s=o;o=orbitLine(k,simT,P,o);const c=gc[S.g[k]];for(let j=s;j<o;j+=3){C[j]=c[0];C[j+1]=c[1];C[j+2]=c[2]}}
     trkVerts=o/3;gl.bindBuffer(gl.ARRAY_BUFFER,bTP);gl.bufferData(gl.ARRAY_BUFFER,P,gl.STATIC_DRAW);gl.bindBuffer(gl.ARRAY_BUFFER,bTC);gl.bufferData(gl.ARRAY_BUFFER,C,gl.STATIC_DRAW)}
-  if(selected>=0&&trkMode!=='off'){const P=new Float32Array(per),C=new Float32Array(per).fill(1);orbitLine(selected,simT,P,0);selVerts=TSEG*2;
+  if(selected>=0&&trkMode!=='off'){const P=new Float32Array(per),C=new Float32Array(per).fill(1);orbitLine(selected,tOf(selected),P,0);selVerts=TSEG*2;
     gl.bindBuffer(gl.ARRAY_BUFFER,bSP);gl.bufferData(gl.ARRAY_BUFFER,P,gl.STATIC_DRAW);gl.bindBuffer(gl.ARRAY_BUFFER,bSC);gl.bufferData(gl.ARRAY_BUFFER,C,gl.STATIC_DRAW)}}
 
 /* ---------- camera & matrices ---------- */
@@ -496,10 +499,10 @@ function frame(now){
     if(colorsDirty)rebuildColors();
     if(tracksDirty||Math.abs(simT-trackT)>3*3600e3)rebuildTracks();
     const tj0=performance.now();
-    for(let i=0;i<visCount;i++)posAt(visible[i],simT,posBuf,i*3);
+    for(let i=0;i<visCount;i++)posAt(visible[i],tOf(visible[i]),posBuf,i*3);
     gl.enable(gl.BLEND);gl.blendFunc(gl.SRC_ALPHA,gl.ONE_MINUS_SRC_ALPHA);gl.depthMask(false);
     if(trkVerts){gl.useProgram(lnP.p);gl.uniformMatrix4fv(lnP.u.vp,false,VP);gl.uniform1f(lnP.u.al,trkVerts>400000?0.16:trkVerts>60000?0.26:0.45);bind(lnP,'P',bTP,3);bind(lnP,'C',bTC,3);gl.drawArrays(gl.LINES,0,trkVerts)}
-    if(trailList.length){const v=TJ*2*3;for(let i=0;i<trailList.length;i++)trailFill(trailList[i],simT,trPos,i*v,trailFrac);
+    if(trailList.length){const v=TJ*2*3;for(let i=0;i<trailList.length;i++)trailFill(trailList[i],tOf(trailList[i]),trPos,i*v,trailFrac);
       perf.js=performance.now()-tj0;
       gl.useProgram(trP.p);gl.uniformMatrix4fv(trP.u.vp,false,VP);gl.bindBuffer(gl.ARRAY_BUFFER,bTrP);gl.bufferSubData(gl.ARRAY_BUFFER,0,trPos);
       bind(trP,'P',bTrP,3);bind(trP,'C',bTrC,4);gl.drawArrays(gl.LINES,0,trailList.length*TJ*2);for(const a of Object.values(trP.a))gl.disableVertexAttribArray(a)}
@@ -507,7 +510,7 @@ function frame(now){
     gl.blendFunc(gl.SRC_ALPHA,gl.ONE_MINUS_SRC_ALPHA);gl.depthMask(true);
     if(visCount){gl.useProgram(ptP.p);gl.uniformMatrix4fv(ptP.u.vp,false,VP);gl.uniform3fv(ptP.u.eye,EYE);gl.uniform1f(ptP.u.sz,(visCount>8000?3.2:4.2)*dpr);
       gl.bindBuffer(gl.ARRAY_BUFFER,bPos);gl.bufferSubData(gl.ARRAY_BUFFER,0,posBuf);bind(ptP,'P',bPos,3);bind(ptP,'C',bCol,3);gl.drawArrays(gl.POINTS,0,visCount)}
-    if(selected>=0){gl.bindBuffer(gl.ARRAY_BUFFER,bOne);gl.bufferData(gl.ARRAY_BUFFER,new Float32Array(posAt(selected,simT,[0,0,0],0)),gl.STREAM_DRAW);
+    if(selected>=0){gl.bindBuffer(gl.ARRAY_BUFFER,bOne);gl.bufferData(gl.ARRAY_BUFFER,new Float32Array(posAt(selected,tOf(selected),[0,0,0],0)),gl.STREAM_DRAW);
       gl.useProgram(ptP.p);gl.uniform1f(ptP.u.sz,11*dpr);bind(ptP,'P',bOne,3);bind(ptP,'C',bWhite,3);gl.drawArrays(gl.POINTS,0,1)}
     for(const p of[ptP,lnP])for(const a of Object.values(p.a))gl.disableVertexAttribArray(a);
     if(selected>=0&&now-infoT>500){infoT=now;liveInfo()}
@@ -520,7 +523,7 @@ async function fromSite(){try{const r=await fetch('data/sats.json',{cache:'no-ca
   apply(j.rows,Date.parse(j.generated));const h=Math.max(0,Math.round((Date.now()-Date.parse(j.generated))/36e5));
   $('dataline').textContent=`${j.rows.length.toLocaleString()} satellites · updated automatically ${h<1?'within the hour':h+' h ago'}`;return true}catch(e){return false}}
 (async()=>{syncTime();if(matchMedia('(max-width:760px),(pointer:coarse)').matches){trkCap=2000;$('cap').value='2000'}if(!(await fromSite())){const st=await kv(0,'rows');if(st&&st.rows&&st.rows.length){apply(st.rows,st.saved)}else $('load').classList.add('on')}requestAnimationFrame(frame)})();
-window.__app={handleFiles,classify,joinData,posAt:(k,t)=>posAt(k,t,[0,0,0],0),get S(){return S},get groups(){return groups},setSel,get state(){return{N,visCount,trkVerts,selected}}};
+window.__app={tOf:k=>tOf(k),handleFiles,classify,joinData,posAt:(k,t)=>posAt(k,t,[0,0,0],0),get S(){return S},get groups(){return groups},setSel,get state(){return{N,visCount,trkVerts,selected}}};
 }
 </script>
 </body>
