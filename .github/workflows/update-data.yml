@@ -1,4 +1,4 @@
-name: Update data and deploy site
+name: Update satellite data
 
 on:
   schedule:
@@ -6,11 +6,13 @@ on:
   workflow_dispatch:
   push:
     branches: [main]
+    paths:
+      - "scripts/**"
+      - ".github/workflows/**"
 
 permissions:
   contents: write
   pages: write
-  id-token: write
 
 concurrency:
   group: update-and-deploy
@@ -19,9 +21,6 @@ concurrency:
 jobs:
   update-and-deploy:
     runs-on: ubuntu-latest
-    environment:
-      name: github-pages
-      url: ${{ steps.deploy.outputs.page_url }}
     steps:
       - uses: actions/checkout@v4
 
@@ -48,13 +47,12 @@ jobs:
             git push
           fi
 
-      - uses: actions/configure-pages@v5
-      - uses: actions/upload-pages-artifact@v3
-        with:
-          path: .
-      - name: Deploy to GitHub Pages
-        id: deploy
-        uses: actions/deploy-pages@v4
+      - name: Ask GitHub Pages to rebuild the site
+        if: steps.data.outcome == 'success'
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh api -X POST "repos/${{ github.repository }}/pages/builds"
 
       - name: Report a failed data download
         if: steps.data.outcome != 'success'
