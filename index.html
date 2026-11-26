@@ -105,8 +105,8 @@ canvas.drag{cursor:grabbing}
   <div class="clock"><b id="utc">—</b><div id="loc">—</div></div>
   <div class="tc" role="group" aria-label="Time controls">
     <button id="play" aria-label="Pause">❚❚</button>
-    <button data-sp="1" aria-pressed="true">1×</button>
-    <button data-sp="60">60×</button>
+    <button data-sp="1">1×</button>
+    <button data-sp="60" aria-pressed="true">60×</button>
     <button data-sp="300">300×</button>
     <button data-sp="1000">1000×</button>
     <button id="now">Now</button>
@@ -126,11 +126,15 @@ canvas.drag{cursor:grabbing}
       </div></div>
     <div class="pair">
       <div><label class="lbl" for="trk">Tracks</label>
-        <select id="trk"><option value="all">Shown owners</option><option value="sel">Clicked satellite</option><option value="off">Off</option></select></div>
+        <select id="trk"><option value="trail">Fading trails</option><option value="all">Full orbits</option><option value="sel">Clicked satellite</option><option value="off">Off</option></select></div>
       <div><label class="lbl" for="cap">Track limit</label>
         <select id="cap"><option>2000</option><option selected>6000</option><option>12000</option><option value="99999">No limit</option></select></div>
     </div>
-    <label class="toggle"><input type="checkbox" id="night" checked> Day and night shading</label>
+    <div class="pair">
+      <div><label class="lbl" for="tlen">Trail length</label>
+        <select id="tlen"><option value="0.08">Short</option><option value="0.2" selected>Medium</option><option value="0.4">Long</option></select></div>
+      <label class="toggle" style="align-self:end;min-height:36px"><input type="checkbox" id="night" checked> Day/night</label>
+    </div>
   </div>
   <div id="list" role="group" aria-label="Owners"></div>
   <div class="foot"><span id="dataline">No data loaded</span><button id="reload">Load new data files</button></div>
@@ -173,8 +177,8 @@ const esc=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'
 
 /* ---------- state ---------- */
 let N=0, S=null, groups=[], gIndex={}, visible=[], visCount=0;
-let simT=Date.now(), speed=1, playing=true, selected=-1;
-let orbOn={LEO:1,MEO:1,GEO:1,HEO:1}, trkMode='all', trkCap=6000, tracksDirty=true, trackT=0, colorsDirty=true;
+let simT=Date.now(), speed=60, playing=true, selected=-1;
+let orbOn={LEO:1,MEO:1,GEO:1,HEO:1}, trkMode='trail', trailFrac=0.2, trailList=[], trCol=null, trPos=null, trkCap=6000, tracksDirty=true, trackT=0, colorsDirty=true;
 const cam={yaw:-0.6,pitch:0.35,dist:4.2};
 
 /* ---------- parsing ---------- */
@@ -261,6 +265,18 @@ function orbitLine(k,t,out,o){
   for(let j=0;j<=TSEG;j++){const nu=TAU*j/TSEG,r=p/(1+e*Math.cos(nu));rot(r*Math.cos(nu),r*Math.sin(nu),ra,w,S.inc[k],tmp,0);
     if(prev){out[o++]=prev[0];out[o++]=prev[1];out[o++]=prev[2];out[o++]=tmp[0];out[o++]=tmp[1];out[o++]=tmp[2]}prev=tmp.slice()}
   return o}
+const TJ=24;
+function trailFill(k,t,out,o,frac){
+  const[ra,w,M0]=elems(k,t),e=S.e[k],a=S.a[k],b=a*Math.sqrt(1-e*e),i=S.inc[k];
+  let M=M0%TAU,E=e<0.8?M:Math.PI;for(let j=0;j<8;j++){const d=(E-e*Math.sin(E)-M)/(1-e*Math.cos(E));E-=d;if(Math.abs(d)<1e-9)break}
+  const cO=Math.cos(ra),sO=Math.sin(ra),cw=Math.cos(w),sw=Math.sin(w),ci=Math.cos(i),si=Math.sin(i);
+  const Px=(cO*cw-sO*sw*ci)/RE,Py=(sO*cw+cO*sw*ci)/RE,Pz=sw*si/RE,Qx=(-cO*sw-sO*cw*ci)/RE,Qy=(-sO*sw+cO*cw*ci)/RE,Qz=cw*si/RE;
+  const dE=frac*TAU/TJ,cd=Math.cos(dE),sd=Math.sin(dE);let c=Math.cos(E),s=Math.sin(E);
+  let x=a*(c-e),y=b*s,px=Px*x+Qx*y,py=Py*x+Qy*y,pz=Pz*x+Qz*y;
+  for(let j=0;j<TJ;j++){const c2=c*cd+s*sd;s=s*cd-c*sd;c=c2;x=a*(c-e);y=b*s;
+    const nx=Px*x+Qx*y,ny=Py*x+Qy*y,nz=Pz*x+Qz*y;
+    out[o++]=px;out[o++]=py;out[o++]=pz;out[o++]=nx;out[o++]=ny;out[o++]=nz;px=nx;py=ny;pz=nz}
+  return o}
 function gmst(t){const jd=t/DAY+2440587.5,T=(jd-2451545)/36525;
   return((280.46061837+360.98564736629*(jd-2451545)+0.000387933*T*T)%360)*D2R}
 function sunDir(t){const n=t/DAY+2440587.5-2451545,L=(280.46+0.9856474*n)*D2R,g=(357.528+0.9856003*n)*D2R,
@@ -292,12 +308,13 @@ $('none').onclick=()=>{groups.forEach(g=>g.on=false);updateVisible();save()};
 $('top').onclick=()=>{const t=[...groups].sort((a,b)=>b.vis-a.vis).slice(0,10);groups.forEach(g=>g.on=t.includes(g));updateVisible();save()};
 for(const b of $('orb').querySelectorAll('button'))b.onclick=()=>{const o=b.dataset.o;orbOn[o]=orbOn[o]?0:1;b.setAttribute('aria-pressed',!!orbOn[o]);updateVisible()};
 $('trk').onchange=e=>{trkMode=e.target.value;tracksDirty=true;updateNote()};
+$('tlen').onchange=e=>{trailFrac=+e.target.value};
 $('cap').onchange=e=>{trkCap=+e.target.value;tracksDirty=true;updateNote()};
 
 /* ---------- time ---------- */
 for(const b of document.querySelectorAll('[data-sp]'))b.onclick=()=>{speed=+b.dataset.sp;playing=true;syncTime()};
 $('play').onclick=()=>{playing=!playing;syncTime()};
-$('now').onclick=()=>{simT=Date.now();speed=1;playing=true;tracksDirty=true;syncTime()};
+$('now').onclick=()=>{simT=Date.now();playing=true;tracksDirty=true;syncTime()};
 function syncTime(){for(const b of document.querySelectorAll('[data-sp]'))b.setAttribute('aria-pressed',+b.dataset.sp===speed);
   $('play').textContent=playing?'❚❚':'▶';$('play').setAttribute('aria-label',playing?'Pause':'Play')}
 const fU=new Intl.DateTimeFormat('en-GB',{timeZone:'UTC',day:'numeric',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:false});
@@ -307,7 +324,7 @@ const fL=new Intl.DateTimeFormat(undefined,{weekday:'short',hour:'2-digit',minut
 let medianEp=0;
 function updateNote(){
   const n=$('note');let msg='',warn=false;
-  if(N&&trkMode==='all'){const c=visCount;if(c>trkCap){msg=`Tracks drawn for ${trkCap.toLocaleString()} of ${c.toLocaleString()} shown satellites (smaller owners first). Untick Starlink or raise the track limit to see the rest.`}}
+  if(N&&(trkMode==='all'||trkMode==='trail')){const c=visCount;if(c>trkCap){msg=`Trails drawn for ${trkCap.toLocaleString()} of ${c.toLocaleString()} shown satellites (smaller owners first). Untick Starlink or raise the track limit to see the rest.`}}
   if(N&&medianEp){const age=Math.abs(simT-medianEp)/DAY;if(age>14){msg=`Orbit data is ${Math.round(age)} days from the time shown, so positions have drifted. Load fresh files for accuracy.`;warn=true}}
   n.hidden=!msg;n.textContent=msg;n.classList.toggle('warn',warn)}
 function setSel(k){selected=k;tracksDirty=true;const box=$('info');if(k<0){box.classList.remove('on');box.innerHTML='';return}box.classList.add('on');fillInfo()}
@@ -370,6 +387,8 @@ void main(){c=C;gl_Position=vp*vec4(P,1.0);gl_PointSize=sz*clamp(3.2/distance(ey
 `precision mediump float;varying vec3 c;void main(){vec2 q=gl_PointCoord-0.5;float r=dot(q,q);if(r>0.25)discard;gl_FragColor=vec4(c,1.0-smoothstep(0.16,0.25,r));}`);
 const lnP=sh(`attribute vec3 P;attribute vec3 C;uniform mat4 vp;varying vec3 c;void main(){c=C;gl_Position=vp*vec4(P,1.0);}`,
 `precision mediump float;uniform float al;varying vec3 c;void main(){gl_FragColor=vec4(c,al);}`);
+const trP=sh(`attribute vec3 P;attribute vec4 C;uniform mat4 vp;varying vec4 c;void main(){c=C;gl_Position=vp*vec4(P,1.0);}`,
+`precision mediump float;varying vec4 c;void main(){gl_FragColor=c;}`);
 // sphere
 const sph=(()=>{const la=64,lo=128,v=[],t=[],ix=[];for(let i=0;i<=la;i++){const lat=90-180*i/la;for(let j=0;j<=lo;j++){const lon=-180+360*j/lo,cl=Math.cos(lat*D2R);
   v.push(cl*Math.cos(lon*D2R),cl*Math.sin(lon*D2R),Math.sin(lat*D2R));t.push(j/lo,i/la)}}
@@ -403,7 +422,7 @@ const ms=document.createElement('script');ms.src='https://cdn.jsdelivr.net/npm/e
 window.__testMap=window.echarts.registerMap;
 
 const bPos=gl.createBuffer(),bCol=gl.createBuffer(),bTP=gl.createBuffer(),bTC=gl.createBuffer(),bSP=gl.createBuffer(),bSC=gl.createBuffer();
-const bOne=gl.createBuffer(),bWhite=gl.createBuffer();gl.bindBuffer(gl.ARRAY_BUFFER,bWhite);gl.bufferData(gl.ARRAY_BUFFER,new Float32Array([1,1,1]),gl.STATIC_DRAW);
+const bTrP=gl.createBuffer(),bTrC=gl.createBuffer(),bOne=gl.createBuffer(),bWhite=gl.createBuffer();gl.bindBuffer(gl.ARRAY_BUFFER,bWhite);gl.bufferData(gl.ARRAY_BUFFER,new Float32Array([1,1,1]),gl.STATIC_DRAW);
 let posBuf=new Float32Array(0),colBuf=new Float32Array(0),trkVerts=0,selVerts=0;
 const rgb=h=>[parseInt(h.slice(1,3),16)/255,parseInt(h.slice(3,5),16)/255,parseInt(h.slice(5,7),16)/255];
 function rebuildColors(){
@@ -412,7 +431,14 @@ function rebuildColors(){
   gl.bindBuffer(gl.ARRAY_BUFFER,bCol);gl.bufferData(gl.ARRAY_BUFFER,colBuf,gl.STATIC_DRAW);
   gl.bindBuffer(gl.ARRAY_BUFFER,bPos);gl.bufferData(gl.ARRAY_BUFFER,posBuf.byteLength||12,gl.DYNAMIC_DRAW);colorsDirty=false}
 function rebuildTracks(){
-  tracksDirty=false;trackT=simT;trkVerts=0;selVerts=0;const per=TSEG*6;
+  tracksDirty=false;trackT=simT;trkVerts=0;selVerts=0;const per=TSEG*6;trailList=[];
+  if(trkMode==='trail'&&visCount){
+    trailList=visible.slice().sort((a,b)=>groups[S.g[a]].vis-groups[S.g[b]].vis).slice(0,trkCap);
+    const n=trailList.length,v=TJ*2;trPos=new Float32Array(n*v*3);trCol=new Float32Array(n*v*4);const gc=groups.map(g=>rgb(g.color));
+    const base=n>8000?0.6:n>2000?0.75:0.9,fa=[];for(let j=0;j<=TJ;j++)fa.push(base*Math.pow(1-j/TJ,1.6));
+    trailList.forEach((k,i)=>{const c=gc[S.g[k]];let o=i*v*4;for(let j=0;j<TJ;j++)for(const jj of[j,j+1]){trCol[o++]=c[0];trCol[o++]=c[1];trCol[o++]=c[2];trCol[o++]=fa[jj]}});
+    gl.bindBuffer(gl.ARRAY_BUFFER,bTrC);gl.bufferData(gl.ARRAY_BUFFER,trCol,gl.STATIC_DRAW);
+    gl.bindBuffer(gl.ARRAY_BUFFER,bTrP);gl.bufferData(gl.ARRAY_BUFFER,trPos.byteLength,gl.DYNAMIC_DRAW)}
   if(trkMode==='all'&&visCount){
     const order=visible.slice().sort((a,b)=>groups[S.g[a]].vis-groups[S.g[b]].vis),use=order.slice(0,trkCap);
     const P=new Float32Array(use.length*per),C=new Float32Array(use.length*per),gc=groups.map(g=>rgb(g.color));let o=0;
@@ -448,7 +474,7 @@ function hidden(p){const d=sub(p,EYE),a=dot(d,d),b=2*dot(EYE,d),c=dot(EYE,EYE)-1
 
 /* ---------- frame loop ---------- */
 function bind(prog,name,buf,size){const l=prog.a[name];if(l<0||l===undefined)return;gl.bindBuffer(gl.ARRAY_BUFFER,buf);gl.enableVertexAttribArray(l);gl.vertexAttribPointer(l,size,gl.FLOAT,false,0,0)}
-let last=performance.now(),infoT=0;
+let last=performance.now(),infoT=0;const perf={js:0};window.__perf=perf;
 function frame(now){
   const dt=Math.min(now-last,250);last=now;if(playing)simT+=dt*speed;
   const dpr=Math.min(devicePixelRatio||1,2),w=Math.round(cv.clientWidth*dpr),h=Math.round(cv.clientHeight*dpr);if(cv.width!==w||cv.height!==h){cv.width=w;cv.height=h}
@@ -463,9 +489,14 @@ function frame(now){
   if(N){
     if(colorsDirty)rebuildColors();
     if(tracksDirty||Math.abs(simT-trackT)>3*3600e3)rebuildTracks();
+    const tj0=performance.now();
     for(let i=0;i<visCount;i++)posAt(visible[i],simT,posBuf,i*3);
     gl.enable(gl.BLEND);gl.blendFunc(gl.SRC_ALPHA,gl.ONE_MINUS_SRC_ALPHA);gl.depthMask(false);
     if(trkVerts){gl.useProgram(lnP.p);gl.uniformMatrix4fv(lnP.u.vp,false,VP);gl.uniform1f(lnP.u.al,trkVerts>400000?0.16:trkVerts>60000?0.26:0.45);bind(lnP,'P',bTP,3);bind(lnP,'C',bTC,3);gl.drawArrays(gl.LINES,0,trkVerts)}
+    if(trailList.length){const v=TJ*2*3;for(let i=0;i<trailList.length;i++)trailFill(trailList[i],simT,trPos,i*v,trailFrac);
+      perf.js=performance.now()-tj0;
+      gl.useProgram(trP.p);gl.uniformMatrix4fv(trP.u.vp,false,VP);gl.bindBuffer(gl.ARRAY_BUFFER,bTrP);gl.bufferSubData(gl.ARRAY_BUFFER,0,trPos);
+      bind(trP,'P',bTrP,3);bind(trP,'C',bTrC,4);gl.drawArrays(gl.LINES,0,trailList.length*TJ*2);for(const a of Object.values(trP.a))gl.disableVertexAttribArray(a)}
     if(selVerts){gl.useProgram(lnP.p);gl.uniformMatrix4fv(lnP.u.vp,false,VP);gl.uniform1f(lnP.u.al,0.95);bind(lnP,'P',bSP,3);bind(lnP,'C',bSC,3);gl.drawArrays(gl.LINES,0,selVerts)}
     gl.blendFunc(gl.SRC_ALPHA,gl.ONE_MINUS_SRC_ALPHA);gl.depthMask(true);
     if(visCount){gl.useProgram(ptP.p);gl.uniformMatrix4fv(ptP.u.vp,false,VP);gl.uniform3fv(ptP.u.eye,EYE);gl.uniform1f(ptP.u.sz,(visCount>8000?3.2:4.2)*dpr);
